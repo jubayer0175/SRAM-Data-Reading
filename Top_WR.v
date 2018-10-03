@@ -1,37 +1,49 @@
-// This is written for extracting 512KB bits of uninitialized 
-//SRAM data from ARTIX 7 FPGA CMOD board
-//There may be redundant nets. 
-/*The buad rate is set to 9600 with default settings
---Jubyaer
---10/03/218
-Project Folder: C:/Users/mzm0175/Desktop/PR_my/Artix_7_15T
- */
-module Top(clk, rst, uart_txd, uart_rxd,MemAdr,MemDB,RamOEn,RamWEn,RamCEn);
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: Jubayer Mahmod
+// 
+// Create Date: 10/03/2018 12:57:28 PM
+// Design Name: SRAM read/ write
+// Module Name: Top_WR
+// Project Name: Aging
+// Target Devices: ARTIX 7
+// Tool Versions: Viavid 2017.2 
+// Description: This module is designed to write intial zeros to on board SRAM and read those back to match uninitalized data 
+
+// 
+// Dependencies: uart.v
+// 
+// Revision 0.01
+// Additional Comments: Top.V file is the predecessor of this file. But it has not 
+// been designed for writing files to memory
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+module Top_WR(clk, rst, uart_txd, uart_rxd,MemAdr,MemDB,RamOEn,RamWEn,RamCEn,a,DoneWrite);
 input clk, rst;
-input [7:0]MemDB;
+inout [7:0]MemDB;// this one is tricky
 input uart_rxd;
 output uart_txd;
 output reg [18:0]MemAdr;
 output reg RamOEn;
 output reg RamWEn;
 output reg RamCEn;
+output reg DoneWrite;
 reg [127:0] data_in;
 wire [127:0] data_out;
 reg input_data_valid;
 wire output_data_valid;
-//SRAM control bits;
-// UART
 reg [7:0] uart_tx_data;
 reg uart_tx_data_valid;
 wire uart_tx_data_ack;
 wire uart_txd, uart_rxd;
 wire [7:0] uart_rx_data;
 wire uart_rx_data_fresh;
-
-// State machine
-reg [1:0] state, next_state;
+input a;// controls the write operation;
+reg [7:0]temp_MemDB;
 reg [19:0] uart_byte_counter;
-reg [11:0]cont;
+
 
 wire clk;
 uart u (.clk(clk),
@@ -45,11 +57,16 @@ uart u (.clk(clk),
 		.rxd(uart_rxd));
 defparam u .CLK_HZ = 12_000_000;
 defparam u .BAUD = 9600;
+
 initial begin
-RamOEn<=0;
-RamWEn<=1;
-RamCEn<=0;
+    RamOEn<=0;
+    RamWEn<=1;
+    RamCEn<=0;
 end
+
+assign MemDB= a? temp_MemDB:8'bzzzzzzzz;// True: false
+
+
 always @(posedge clk )
 begin
 	if (rst) begin
@@ -57,8 +74,18 @@ begin
 		uart_tx_data_valid <= 1'b0;
 	    MemAdr<=0;
 	    uart_byte_counter <= 19'h0;
-	end        
-	else begin   
+	    DoneWrite<=0;
+	end
+	
+	else if(a==1'b1) begin
+        MemAdr<=MemAdr+1;// never do this in the middle of the operation
+        RamWEn<=0;
+        temp_MemDB<=7'd0;
+        if(MemAdr==524287) DoneWrite<=1;  //Let me know that writing is done   
+        uart_tx_data_valid <= 1'b0;
+	end
+	else if ((a==1'b0))begin
+	       RamWEn<=1;// read mode
 	        if (uart_byte_counter <= 20'd524287) begin		// there should be total 524288 bytes		
                         if (uart_tx_data_ack == 1'b1) begin
                             uart_tx_data_valid <= 1'b0;
